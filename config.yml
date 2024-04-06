@@ -1,0 +1,4 @@
+cache:
+  save_to_disk_interval: 60 # 60 seconds
+  ttl: 60 # 60 seconds
+  max_size: 1000 # 1000 key-value pairs
