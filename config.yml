@@ -6,10 +6,10 @@ mysql:
   host: databaseteam8.c1coikyuqtk8.us-east-1.rds.amazonaws.com
   user: admin
   password: admin123
-  db: databaseteam8
+  db: twitter
   port: 3306
 mongodb:
   host: cluster0.wdgelhd.mongodb.net
   user: bhaveshsharma7895
   password: 12345
-  db: tweet
+  db: Database_team_8
