@@ -5,13 +5,14 @@ import certifi
 import mysql.connector
 from pymongo import MongoClient
 
-from config import mysql_config, mongodb_config
+from src.config import mysql_config, mongodb_config
 
 logging.config.fileConfig('logging.conf')
 logger = logging.getLogger(__name__)
 
 
 def get_mysql_conn(attempts=3, delay=2):
+    logger.info("Trying to get MySQL connection")
     attempt = 1
     while attempt < attempts + 1:
         try:
@@ -30,6 +31,7 @@ def get_mysql_conn(attempts=3, delay=2):
 
 
 def get_mongodb_conn(collection: str, attempts=3, delay=2):
+    logger.info("Trying to get MongoDB connection")
     attempt = 1
     mongo_conn_string = f'mongodb+srv://{mongodb_config["user"]}:{mongodb_config["password"]}@{mongodb_config["host"]}/?retryWrites=true&w=majority&appName=Cluster0'
     while attempt < attempts + 1:
