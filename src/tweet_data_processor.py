@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 import logging.config
 
-from connections import get_mongodb_conn, get_mysql_conn
+from src.connections import get_mongodb_conn, get_mysql_conn
 
 logging.config.fileConfig('logging.conf')
 logger = logging.getLogger(__name__)
