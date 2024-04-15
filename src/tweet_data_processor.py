@@ -199,24 +199,27 @@ class TweetDataProcessor:
         self.user_collection.update_one({'id_str': id_B},
                                         {'$addToSet': {field_B: id_A}})
 
-    def set_relationship_neo4j(self, id_A, id_B, relationship) -> None:
+    def set_relationship_neo4j(self, user_A, user_B, relationship) -> None:
         """
         Function to add users relationships into Neo4J
 
         Args:
-            id_A: string, user id A
-            id_B: string, user id B
+            user_A: Dict have user id A data
+            user_B: Dict have user id B data
             relationship: relationship between users A and B
         Returns: None
         """
-        query = f"""MERGE (a:user { " { id_str: " + id_A + "}" } )
-                    MERGE (b:user { " { id_str: " + id_B + "}" } )
+
+        query = f"""MERGE (a:user { " { id_str: " + user_A['id_str'] + "}" } )
+                    MERGE (b:user { " { id_str: " + user_B['id_str'] + "}" } )
                     WITH a,b
                     MERGE (a)-[r:{relationship}]->(b)
-                    ON CREATE SET r.count = 1
+                    ON CREATE SET r.count = 1, 
+                    a.screen_name = '{user_A['screen_name']}',
+                    b.screen_name = '{user_B['screen_name']}'
                     ON MATCH SET r.count = r.count + 1
         """
-        self.neo4j_connection.execute_query(query)   
+        self.neo4j_connection.execute_query(query)     
 
     def process_data(self, file_path: str) -> None:
         """
@@ -253,9 +256,11 @@ class TweetDataProcessor:
                                                       field_B='replied_by_users')
 
                         # Add Relationship into Neo4J
-                        self.set_relationship_neo4j(id_A = data['user']['id_str'],
-                                                    id_B = data['in_reply_to_user_id_str'],
-                                                    relationship = 'reply')
+                        self.set_relationship_neo4j(user_A = data['user'],
+                                                    user_B = {'id_str': data['in_reply_to_user_id_str'], 
+                                                              'name': data['in_reply_to_screen_name'],
+                                                              'screen_name': data['in_reply_to_screen_name']},
+                                                    relationship = 'replied_to')
 
                     if 'retweeted_status' in data:
 
@@ -274,9 +279,9 @@ class TweetDataProcessor:
                                                           field_B='retweeted_by_users')
 
                             # Add Relationship into Neo4J                        
-                            self.set_relationship_neo4j(id_A = data['user']['id_str'],
-                                                        id_B = data['retweeted_status']['user']['id_str'],
-                                                        relationship = 'retweet')          
+                            self.set_relationship_neo4j(user_A = data['user'],
+                                                        user_B = data['retweeted_status']['user'],
+                                                        relationship = 'retweeted')         
 
                             # Process Tweet
                             self.process_tweet(tweet_data=data["retweeted_status"])
@@ -304,9 +309,9 @@ class TweetDataProcessor:
                                                           field_B='quoted_by_users')
 
                             # Add Relationship into Neo4J
-                            self.set_relationship_neo4j(id_A = data['user']['id_str'],
-                                                        id_B = data['quoted_status']['user']['id_str'],
-                                                        relationship = 'quote')
+                            self.set_relationship_neo4j(user_A = data['user'],
+                                                        user_B = data['quoted_status']['user'],
+                                                        relationship = 'quoted')   
 
                             # Process Tweet
                             self.process_tweet(tweet_data=data["quoted_status"])
