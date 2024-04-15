@@ -5,7 +5,10 @@ import certifi
 import mysql.connector
 from pymongo import MongoClient
 
-from src.config import mysql_config, mongodb_config
+import neo4j
+from neo4j import GraphDatabase
+
+from src.config import mysql_config, mongodb_config, neo4j_config
 
 logging.config.fileConfig('logging.conf')
 logger = logging.getLogger(__name__)
@@ -44,5 +47,23 @@ def get_mongodb_conn(collection: str, attempts=3, delay=2):
                 logger.exception("Failed to connect to MongoDB, exiting without a connection")
                 raise err
             logger.info(f"MongoDB Connection failed: {err}. Retrying ({attempt}/{attempts - 1})...")
+            time.sleep(delay ** attempt)
+            attempt += 1
+
+
+def get_neo4j_conn(attempts=3, delay=2):
+    logger.info("Trying to get Neo4j connection")
+    attempt = 1
+    
+    while attempt < attempts + 1:
+        try:
+            driver = GraphDatabase.driver(neo4j_config["host"], auth= (neo4j_config["user"],neo4j_config["password"]))
+            driver.verify_connectivity()
+            return driver
+        except Exception as err:
+            if attempts == attempt:
+                logger.exception("Failed to connect to Neo4j, exiting without a connection")
+                raise err
+            logger.info(f"Neo4j Connection failed: {err}. Retrying ({attempt}/{attempts - 1})...")
             time.sleep(delay ** attempt)
             attempt += 1
