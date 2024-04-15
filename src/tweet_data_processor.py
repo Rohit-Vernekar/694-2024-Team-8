@@ -14,16 +14,6 @@ class TweetDataProcessor:
         self.tweet_collection = get_mongodb_conn(collection="tweet_data")
         self.user_collection = get_mongodb_conn(collection="user_data")
 
-    def fetch_user(self, user_data, post_creation):
-        user = {"id_str": user_data["id_str"], "name": user_data["name"].replace("'", "\\'").replace('"', '\\"'),
-            "screen_name": user_data["screen_name"].replace("'", "\\'").replace('"', '\\"'),
-            "protected": user_data["protected"], "verified": user_data["verified"],
-            "followers_count": user_data["followers_count"], "friends_count": user_data["friends_count"],
-            "listed_count": user_data["listed_count"], "favourites_count": user_data["favourites_count"],
-            "statuses_count": user_data["statuses_count"], "created_at": self.parse_datetime(user_data["created_at"]),
-            "last_post_timestamp": self.parse_datetime(post_creation)}
-        return user
-
     def create_user_tb_mysql(self):
         sql_setup = """CREATE TABLE IF NOT EXISTS users (
                         id_str VARCHAR(255) NOT NULL,
@@ -48,49 +38,6 @@ class TweetDataProcessor:
             self.mysql_conn.commit()
         except Exception as e:
             print(f"The error '{e}' occurred while creating table userdata in MySQL DB.")
-
-    def insert_into_user_tb_mysql(self, user):
-
-        # Create table userdata if it does not exist yet
-        self.create_user_tb_mysql()
-
-        # Insert or update userdata records using user object
-        sql_insertion = f"""
-        REPLACE INTO users 
-        (
-            id_str,
-            name,
-            screen_name,
-            protected,
-            verified,
-            followers_count,
-            friends_count,
-            listed_count,
-            favourites_count,
-            statuses_count,
-            created_at,
-            last_post_timestamp
-        ) VALUES
-        (
-            '{user["id_str"]}',
-            '{user["name"]}',
-            '{user["screen_name"]}',
-            {user['protected']},
-            {user['verified']},
-            {user['followers_count']},
-            {user['friends_count']},
-            {user['listed_count']},
-            {user['favourites_count']},
-            {user['statuses_count']},
-            TIMESTAMP('{user["created_at"]}'),
-            GREATEST(COALESCE(last_post_timestamp,'1000-01-01 00:00:00'), TIMESTAMP('{user["last_post_timestamp"]}'))
-        );
-        """
-        try:
-            self.mysql_conn.cursor().execute(sql_insertion)
-            self.mysql_conn.commit()
-        except Exception as e:
-            print(f"The error '{e}' occurred while inserting a record into table userdata in MySQL DB.")
 
     @staticmethod
     def parse_datetime(timestamp_str):
