@@ -1,11 +1,12 @@
 import json
-from datetime import datetime
 import logging.config
+from datetime import datetime
 
 from src.connections import get_mongodb_conn, get_mysql_conn
 
 logging.config.fileConfig('logging.conf')
 logger = logging.getLogger(__name__)
+
 
 class TweetDataProcessor:
     def __init__(self):
@@ -68,17 +69,32 @@ class TweetDataProcessor:
             tweet_data: Dict have tweet data
         Returns: None
         """
-        logger.info(f"Processing Tweet: {tweet_data['id_str']}")
+        tweet_id = tweet_data['id_str']
+        logger.info(f"Processing Tweet: {tweet_id}")
         keys_to_be_dropped = ["id", "geo", "favorited", "retweeted", "filter_level", "quoted_status_id"]
         for key in keys_to_be_dropped:
             tweet_data.pop(key, None)
-
         tweet_data["user"] = tweet_data["user"]["id_str"]
-
         hashtags = tweet_data.get("entities", {}).get("hashtags")
         if hashtags:
             self.process_hashtag(hashtags=hashtags, tweet_id=tweet_data["id_str"], user_id=tweet_data["user"])
-        self.tweet_collection.insert_one(tweet_data)
+
+        # Check if tweet with same ID exists
+        existing_tweet = self.tweet_collection.find_one({"id_str": tweet_id})
+        if existing_tweet:
+            existing_created_at = datetime.strptime(existing_tweet['created_at'], '%a %b %d %H:%M:%S %z %Y')
+            new_created_at = datetime.strptime(tweet_data['created_at'], '%a %b %d %H:%M:%S %z %Y')
+
+            if new_created_at > existing_created_at:
+                # Update existing tweet with new data
+                self.tweet_collection.replace_one({"id_str": tweet_id}, tweet_data)
+                logger.info(f"Updated existing tweet with ID: {tweet_id}")
+            else:
+                logger.info(f"Skipping tweet with ID {tweet_id} as existing tweet is newer")
+        else:
+            # Insert new tweet data
+            self.tweet_collection.insert_one(tweet_data)
+            logger.info(f"Inserted new tweet with ID: {tweet_id}")
 
     def process_reply_user_mysql(self, tweet_data: dict) -> None:
         """
@@ -88,7 +104,7 @@ class TweetDataProcessor:
         Returns: None
         """
         logger.info(f"Processing User into MySQL: {tweet_data['in_reply_to_user_id_str']}")
-        
+
         ## For reply users not inserted in database yet, name will be equal to screen_name 
         sql_insertion = f"""
         REPLACE INTO users 
@@ -117,7 +133,7 @@ class TweetDataProcessor:
 
         user_data['name'] = user_data['name'].replace("'", "\\'").replace('"', '\\"')
         user_data['screen_name'] = user_data['screen_name'].replace("'", "\\'").replace('"', '\\"')
-        
+
         sql_insertion = f"""
         REPLACE INTO users 
         (id_str, 
@@ -159,18 +175,12 @@ class TweetDataProcessor:
         """
         logger.info(f"Processing User into MongoDB: {user_data['id_str']}")
 
-        user = {}
-        user['id_str'] = user_data['id_str']
-        user['reply_users'] = []
-        user['quoted_users'] = []
-        user['retweeted_users'] = []
-        user['replied_by_users'] = []
-        user['quoted_by_users'] = []
-        user['retweeted_by_users'] = []
+        user = {'id_str': user_data['id_str'], 'reply_users': [], 'quoted_users': [], 'retweeted_users': [],
+                'replied_by_users': [], 'quoted_by_users': [], 'retweeted_by_users': []}
 
-        self.user_collection.update_one({'id_str': user['id_str']}, 
-                                        {'$setOnInsert': user}, upsert=True) 
-        
+        self.user_collection.update_one({'id_str': user['id_str']},
+                                        {'$setOnInsert': user}, upsert=True)
+
     def set_relationship_mongodb(self, id_A, id_B, field_A, field_B) -> None:
         """
         Function to add users id into relationship lists in MongoDB
@@ -181,18 +191,23 @@ class TweetDataProcessor:
             field_B: string, relationship list field name in user id B
         Returns: None
         """
-        self.user_collection.update_one({'id_str': id_A}, 
-                {'$addToSet': { field_A: id_B } })
-        
-        self.user_collection.update_one({'id_str': id_B }, 
-                {'$addToSet': { field_B: id_A } })       
+        self.user_collection.update_one({'id_str': id_A},
+                                        {'$addToSet': {field_A: id_B}})
 
-    def process_data(self, file_path: str):
+        self.user_collection.update_one({'id_str': id_B},
+                                        {'$addToSet': {field_B: id_A}})
 
+    def process_data(self, file_path: str) -> None:
+        """
+        Function to process tweet data from the JSON file
+        Args:
+            file_path: Path to JSON file
+        Returns: None
+        """
         with open(file_path, 'r') as file:
             for line in file:
                 if line != '\n':
-                    
+
                     data = json.loads(line)
 
                     # Process User into MySQL
@@ -204,7 +219,6 @@ class TweetDataProcessor:
                     data["is_retweet_status"] = False
 
                     if data['in_reply_to_user_id_str'] is not None:
-                        
                         # Process User into MySQL
                         self.process_reply_user_mysql(data)
 
@@ -212,26 +226,26 @@ class TweetDataProcessor:
                         self.process_user_mongodb(user_data={'id_str': data['in_reply_to_user_id_str']})
 
                         # Add user ids to relationship lists
-                        self.set_relationship_mongodb(id_A = data['user']['id_str'],
-                                                      id_B = data['in_reply_to_user_id_str'],
-                                                      field_A = 'reply_users',
-                                                      field_B = 'replied_by_users')
+                        self.set_relationship_mongodb(id_A=data['user']['id_str'],
+                                                      id_B=data['in_reply_to_user_id_str'],
+                                                      field_A='reply_users',
+                                                      field_B='replied_by_users')
 
                     if 'retweeted_status' in data:
 
                         try:
                             # Process User into MySQL
-                            self.process_user_mysql(tweet_data=data['retweeted_status'], 
+                            self.process_user_mysql(tweet_data=data['retweeted_status'],
                                                     user_data=data['retweeted_status']['user'])
-                            
+
                             # Process User into MongoDB
                             self.process_user_mongodb(user_data=data['retweeted_status']['user'])
 
                             # Add user ids to relationship lists
-                            self.set_relationship_mongodb(id_A = data['user']['id_str'],
-                                                        id_B = data['retweeted_status']['user']['id_str'],
-                                                        field_A = 'retweeted_users',
-                                                        field_B = 'retweeted_by_users')                            
+                            self.set_relationship_mongodb(id_A=data['user']['id_str'],
+                                                          id_B=data['retweeted_status']['user']['id_str'],
+                                                          field_A='retweeted_users',
+                                                          field_B='retweeted_by_users')
 
                             # Process Tweet
                             self.process_tweet(tweet_data=data["retweeted_status"])
@@ -246,17 +260,17 @@ class TweetDataProcessor:
 
                         try:
                             # Process User into MySQL
-                            self.process_user_mysql(tweet_data=data['quoted_status'], 
+                            self.process_user_mysql(tweet_data=data['quoted_status'],
                                                     user_data=data['quoted_status']['user'])
-                            
+
                             # Process User into MongoDB
                             self.process_user_mongodb(user_data=data['quoted_status']['user'])
 
                             # Add user ids to relationship lists
-                            self.set_relationship_mongodb(id_A = data['user']['id_str'],
-                                                        id_B = data['quoted_status']['user']['id_str'],
-                                                        field_A = 'quoted_users',
-                                                        field_B = 'quoted_by_users')
+                            self.set_relationship_mongodb(id_A=data['user']['id_str'],
+                                                          id_B=data['quoted_status']['user']['id_str'],
+                                                          field_A='quoted_users',
+                                                          field_B='quoted_by_users')
 
                             # Process Tweet
                             self.process_tweet(tweet_data=data["quoted_status"])
