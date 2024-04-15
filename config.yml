@@ -13,3 +13,8 @@ mongodb:
   user: bhaveshsharma7895
   password: 12345
   db: Database_team_8
+neo4j:
+  host: neo4j+s://72aae374.databases.neo4j.io
+  user: neo4j
+  password: amQgIqoFlY-AySUC9zzTVLjbPuHDFLVGzoM9F_nn3uM
+  db: neo4j
