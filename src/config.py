@@ -6,3 +6,4 @@ with open("config.yml") as fp:
     mysql_config = config["mysql"]
     mongodb_config = config["mongodb"]
     neo4j_config = config["neo4j"]
+    hashtag_config = config["hashtag"]
