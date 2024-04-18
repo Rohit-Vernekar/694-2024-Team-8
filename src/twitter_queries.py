@@ -2,7 +2,7 @@ import pymongo
 import mysql.connector
 from datetime import datetime, timedelta
 from mysql.connector import Error
-from connections import get_mysql_conn, get_mongodb_conn
+from .connections import get_mysql_conn, get_mongodb_conn
 
 class TwitterQueries:
     def __init__(self):
@@ -14,14 +14,12 @@ class TwitterQueries:
             print("MySQL connection is not established.")
             return []
         try:
-            modified_name = user_name.strip().replace(' ', '%').replace('_', '\\_')
             query = "SELECT id_str FROM users WHERE name LIKE %s ESCAPE '\\';"
-            cursor = self.mysql_connection.cursor()
-            search_pattern = f"%{modified_name}%"
-            cursor.execute(query, (search_pattern,))
-            results = cursor.fetchall()
-            cursor.close()
-            return [row[0] for row in results] if results else []
+            with self.mysql_connection.cursor() as cursor:
+                search_pattern = f"%{user_name.replace('%', '\\%').replace('_', '\\_')}%"
+                cursor.execute(query, (search_pattern,))
+                results = cursor.fetchall()
+                return [row[0] for row in results]
         except mysql.connector.Error as e:
             print(f"Error fetching user IDs: {e}")
             return []
@@ -41,8 +39,7 @@ class TwitterQueries:
 
         sort_criteria = [(field, pymongo.DESCENDING if direction == 'desc' else pymongo.ASCENDING) 
                          for field, direction in (sort_fields.items() if sort_fields else [('created_at', 'desc')])]
-        tweets = list(self.mongo_db.tweet_data.find(query).sort(sort_criteria))
-        return tweets
+        return list(self.mongo_db.tweet_data.find(query).sort(sort_criteria))
 
     def search_tweets_by_username(self, username, sort_fields=None, time_frame=None):
         user_ids = self.get_user_ids_by_name(username)
@@ -50,9 +47,6 @@ class TwitterQueries:
             print(f"No users found for the name: {username}")
             return []
         return self.fetch_tweets_by_criteria({"user": {"$in": user_ids}}, sort_fields, time_frame)
-
-
-    # This query focusses on the searching tweets by hashtags with timerange as its sorting parameter
 
     def search_tweets_by_hashtag(self, hashtag_query, sort_fields=None, time_frame=None):
         tweet_ids = self.fetch_tweet_ids_by_hashtag(hashtag_query)
@@ -67,23 +61,22 @@ class TwitterQueries:
             return []
         try:
             query = "SELECT tweet_id FROM hashtags WHERE hashtag = %s;"
-            cursor = self.mysql_connection.cursor()
-            cursor.execute(query, (hashtag_query,))
-            results = cursor.fetchall()
-            cursor.close()
-            return [result[0] for result in results] if results else []
+            with self.mysql_connection.cursor() as cursor:
+                cursor.execute(query, (hashtag_query,))
+                results = cursor.fetchall()
+                return [result[0] for result in results]
         except Error as e:
             print(f"Error fetching tweet IDs: {e}")
             return []
 
     def fetch_and_display_tweets(self, search_term, search_type='hashtag', sort_fields=None, time_frame=None):
+        tweets = []
         if search_type == 'hashtag':
             tweets = self.search_tweets_by_hashtag(search_term, sort_fields, time_frame)
         elif search_type == 'username':
             tweets = self.search_tweets_by_username(search_term, sort_fields, time_frame)
         else:
             print(f"Invalid search type specified: {search_type}")
-            return
 
         if tweets:
             print(f"Tweets for {search_type} '{search_term}':")
@@ -92,31 +85,17 @@ class TwitterQueries:
         else:
             print(f"No tweets found for {search_type} '{search_term}'.")
 
-
-# Search users and sort them by followers count and last_post_timestamp
     def search_and_sort_users(self, search_term, sort_by='followers_count'):
-        """
-        Search for users by name and sort the results by 'followers_count' or 'last_post_timestamp'.
-        """
         if not self.mysql_connection:
             print("MySQL connection is not established.")
             return []
         try:
-            modified_name = search_term.strip().replace(' ', '%').replace('_', '\\_')
-            query = f"""
-            SELECT id_str, name, followers_count, last_post_timestamp
-            FROM users 
-            WHERE name LIKE %s ESCAPE '\\'
-            ORDER BY {sort_by} DESC;
-            """
-            cursor = self.mysql_connection.cursor()
-            search_pattern = f"%{modified_name}%"
-            cursor.execute(query, (search_pattern,))
-            results = cursor.fetchall()
-            cursor.close()
-            return [{'user_id': row[0], 'name': row[1], 'followers_count': row[2], 'last_post_timestamp': row[3]} for row in results]
+            query = "SELECT id_str, name, followers_count, last_post_timestamp FROM users WHERE name LIKE %s ORDER BY " + sort_by + " DESC;"
+            with self.mysql_connection.cursor() as cursor:
+                search_pattern = f"%{search_term.replace('%', '\\%').replace('_', '\\_')}%"
+                cursor.execute(query, (search_pattern,))
+                results = cursor.fetchall()
+                return [{'user_id': row[0], 'name': row[1], 'followers_count': row[2], 'last_post_timestamp': row[3]} for row in results]
         except mysql.connector.Error as e:
             print(f"Error searching and sorting users: {e}")
             return []
-        
-   
