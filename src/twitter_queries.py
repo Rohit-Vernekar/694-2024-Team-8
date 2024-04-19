@@ -5,8 +5,6 @@ from mysql.connector import Error
 import pandas as pd
 from datetime import datetime, timedelta
 import pytz
-
-# Assuming that .connections module has the appropriate functions get_mysql_conn and get_mongodb_conn
 from .connections import get_mysql_conn, get_mongodb_conn
 
 class TwitterQueries:
