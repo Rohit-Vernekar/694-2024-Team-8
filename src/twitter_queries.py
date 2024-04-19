@@ -156,3 +156,114 @@ class TwitterQueries:
         else:
             return None    
         
+         # Define the new method to search tweets by hashtag
+    def search_tweets_by_hashtag(self, hashtag, time_frame=None):
+        tweet_ids = self.fetch_tweet_ids_from_mysql(hashtag)
+        if not tweet_ids:
+            print("No tweet IDs found for hashtag:", hashtag)
+            return pd.DataFrame()  # Return an empty DataFrame if no IDs are found
+
+        time_limit = self.get_time_limit(time_frame) if time_frame else None
+        query = {"id_str": {"$in": tweet_ids}}
+        if time_limit:
+            query["created_at"] = {"$gte": time_limit.isoformat()}
+
+        tweets = self.fetch_tweets_from_mongodb(tweet_ids)  # Make sure to pass tweet_ids here, not query
+        if not tweets:
+            print("No tweets found in MongoDB matching the tweet IDs from MySQL.")
+            return pd.DataFrame()
+
+        data = [{
+            'User ID': tweet.get('user', 'Unknown'),
+            'Tweet Text': tweet.get('text', ''),
+            'Retweet Count': tweet.get('retweet_count', 0),
+            'Favorite Count': tweet.get('favorite_count', 0),
+            'Reply Count': tweet.get('reply_count', 0),
+            'Timestamp': tweet.get('created_at', '')
+        } for tweet in tweets]
+
+        return pd.DataFrame(data)
+
+    def fetch_tweet_ids_from_mysql(self, hashtag):
+        if not self.mysql_connection:
+            print("MySQL connection is not established.")
+            return []
+        try:
+            cursor = self.mysql_connection.cursor()
+            query = "SELECT tweet_id FROM hashtags WHERE hashtag = %s"
+            cursor.execute(query, (hashtag,))
+            tweet_ids = [item[0] for item in cursor.fetchall()]
+            cursor.close()
+            return tweet_ids
+        except Error as e:
+            print(f"Error fetching tweet IDs: {e}")
+            return []
+
+    def fetch_tweets_from_mongodb(self, tweet_ids):
+        if self.mongo_db is None:
+            print("MongoDB connection is not established.")
+            return []
+
+        # Check if tweet_ids list is empty to avoid MongoDB errors
+        if not tweet_ids:
+            print("No tweet IDs provided to fetch from MongoDB.")
+            return []
+
+        # Proceed with fetching tweets if there are valid tweet IDs
+        return list(self.mongo_db.find({"id_str": {"$in": tweet_ids}}, {
+            "text": 1, 
+            "user": 1, 
+            "retweet_count": 1, 
+            "favorite_count": 1, 
+            "reply_count": 1,
+            "created_at": 1
+        }))
+        
+        
+           
+    #Popular tweets based on engagement metrics(Top 10)
+    def search_popular_tweets_based_on_engagement(self, time_frame=None):
+        if self.mongo_db is None:
+            print("MongoDB connection is not established.")
+            return pd.DataFrame()
+
+        time_limit = self.get_time_limit(time_frame) if time_frame else None
+        pipeline = [
+            {
+                '$match': {"created_at": {"$gte": time_limit.isoformat()}} if time_limit else {}
+            },
+            {
+                '$project': {
+                    'text': 1,
+                    'user': 1,
+                    'quote_count': {'$ifNull': ['$quote_count', 0]},
+                    'reply_count': {'$ifNull': ['$reply_count', 0]},
+                    'retweet_count': {'$ifNull': ['$retweet_count', 0]},
+                    'favorite_count': {'$ifNull': ['$favorite_count', 0]},
+                    'total_engagement': {
+                        '$add': [
+                            '$quote_count', '$reply_count', '$retweet_count', '$favorite_count'
+                        ]
+                    }
+                }
+            },
+            {
+                '$sort': {'total_engagement': -1}
+            },
+            {
+                '$limit': 10
+            }
+        ]
+
+        try:
+            results = list(self.mongo_db.aggregate(pipeline))
+            if not results:
+                print("No tweets found with high engagement.")
+                return pd.DataFrame()
+
+            return pd.DataFrame(results)
+        except pymongo.errors.OperationFailure as e:
+            print(f"Error fetching tweets based on engagement: {e}")
+            return pd.DataFrame()   
+        
+        
