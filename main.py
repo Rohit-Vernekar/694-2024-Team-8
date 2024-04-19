@@ -14,26 +14,24 @@ mysql_config = {
 mongo_uri = 'cluster0.wdgelhd.mongodb.net'
 mongo_db_name = 'Database_team_8'
 
-
-
-# Create an instance of TwitterQueries
+#initiate
 twitter_queries = TwitterQueries()
 
-# Define the username you want to search for
-username = "NUFF"
+'''search_name = 'NUFF'
+sort_metric = 'timestamp'  # Could be 'timestamp', 'retweet', 'favorite', 'engagement'
+sort_order = -1  # -1 for descending, 1 for ascending
+df = twitter_queries.create_aggregated_username(search_name, sort_metric, sort_order)
+print(f"Aggregated Tweet Data for '{search_name}':")
+print(df)'''
 
-# Define sorting and time frame parameters
-sort_fields = {'order': 'latest'}  # Sorting tweets by the latest
-time_frame = '1week'  # Filtering tweets from the last week
+'''# Fetch and display user data sorted by followers count
+df_users_by_followers_desc = twitter_queries.search_and_sort_users('bob', sort_by='followers_count', order='desc')
+print("Users sorted by followers count (descending):")
+print(df_users_by_followers_desc)'''
 
-# Call the method to search tweets by username
-tweets_by_username = twitter_queries.search_tweets_by_username(username, sort_fields, time_frame)
+user_name = "NUFF"
+user_info = twitter_queries.get_user_ids_by_username(user_name)
 
-# Check if any tweets were found and print the results
-if tweets_by_username:
-    print(f"Tweets found for username '{username}':")
-    for tweet in tweets_by_username:
-        print(tweet)  # Print each tweet's details
-else:
-    print(f"No tweets found for username '{username}'.")
-
+# Search for tweets by the user from the last week
+tweets = twitter_queries.search_tweets_username(user_info, '1week')
+print(tweets)
