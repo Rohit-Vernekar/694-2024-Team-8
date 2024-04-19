@@ -1,157 +1,158 @@
+import pymongo
 import mysql.connector
+from datetime import datetime, timedelta
 from mysql.connector import Error
-from pymongo import MongoClient
+import pandas as pd
+from datetime import datetime, timedelta
+import pytz
+from .connections import get_mysql_conn, get_mongodb_conn
 
 class TwitterQueries:
-    def __init__(self, mysql_config, mongo_uri, mongo_db_name):
-        # Initialize MySQL and MongoDB connections when the class instance is created
-        self.mysql_connection = self._create_mysql_connection(mysql_config)
-        self.mongo_db = self._create_mongo_connection(mongo_uri, mongo_db_name)
-
-    
-    # the connection codes can be called from the other class
-    
-    
-    def _create_mysql_connection(self, config):
-        # Private method to create a MySQL connection
+    def __init__(self):
+        # Initialize MySQL connection
+        self.mysql_connection = get_mysql_conn()
+        # Initialize MongoDB connection
         try:
-            connection = mysql.connector.connect(**config)
-            return connection
-        except Error as e:
-            print(f"Error connecting to MySQL: {e}")
-            return None
+            self.mongo_db = get_mongodb_conn(collection="tweet_data")
+        except Exception as e:
+            print("Failed to connect to MongoDB:", e)
+            self.mongo_db = None
 
-    def _create_mongo_connection(self, uri, db_name):
-        # Private method to create a MongoDB connection
-        client = MongoClient(uri)
-        return client[db_name]
+    def ensure_text_index(self):
+        if self.mongo_db is not None:
+            if 'text' not in self.mongo_db.index_information():
+                self.mongo_db.create_index([('text', pymongo.TEXT)], default_language='english')
+                print("Text index created on the 'text' field.")
+            else:
+                print("Text index already exists.")
 
-
-    # the below function helps fetch the tweets by users.
-
-    def get_user_ids_by_name(self, user_name):
-        """
-        Fetch user IDs from MySQL based on a user's name, allowing for partial matches and treating special
-        characters like underscores as literals.
-
-        :param user_name: String, the part of the name of the user to search for.
-        :return: List of user IDs or an empty list if no user is found.
-        """
+    def get_user_ids_by_username(self, user_name):
+        # Handle MySQL connection issues
         if not self.mysql_connection:
             print("MySQL connection is not established.")
             return []
         try:
-            # Prepare the username for the query
-            modified_name = user_name.strip().replace(' ', '%').replace('_', '\\_')
-            query = "SELECT user_id FROM users WHERE name LIKE %s ESCAPE '\\';"
-            cursor = self.mysql_connection.cursor()
-            search_pattern = f"%{modified_name}%"
-            cursor.execute(query, (search_pattern,))
-            results = cursor.fetchall()
-            cursor.close()
-            return [result[0] for result in results] if results else []
+            query = "SELECT id_str, name FROM users WHERE name LIKE CONCAT('%', %s, '%');"
+            with self.mysql_connection.cursor() as cursor:
+                cursor.execute(query, (user_name,))
+                results = cursor.fetchall()
+                return {row[0]: row[1] for row in results}
         except Error as e:
             print(f"Error fetching user IDs: {e}")
             return []
 
-    def fetch_tweets_by_user_ids(self, user_ids, order='latest'):
-        """
-        Fetch tweets for specific user IDs from MongoDB, sorted by created date.
-
-        :param user_ids: List of user IDs (already in string format).
-        :param order: String, sorting order of tweets ('latest' or 'oldest').
-        :return: List of tweets or empty list if none found.
-        """
-        if not self.mongo_db:
+    # Search tweets by username
+    def search_tweets_username(self, user_info, time_frame=None):
+        if self.mongo_db is None:
             print("MongoDB connection is not established.")
-            return []
-        query = {"user": {"$in": user_ids}}
-        sort_order = -1 if order == 'latest' else 1
-        tweets = list(self.mongo_db.tweet_data.find(query).sort("created_at", sort_order))
-        return tweets
+            return pd.DataFrame()
 
+        # Get the time limit from the utility function, ensuring it's timezone-aware
+        time_limit = self.get_time_limit(time_frame) if time_frame else None
 
-    # the below function fetches the tweets by hashtags
+        # Build the query with a time limit if specified
+        query = {"user": {"$in": list(user_info.keys())}}
+        if time_limit:
+            query["created_at"] = {"$gte": time_limit.isoformat()}  # Use isoformat for MongoDB compatibility
 
+        # Specify the projection to fetch necessary fields
+        projection = {
+            "text": 1, 
+            "user": 1, 
+            "lang": 1, 
+            "is_retweeted_status": 1,    
+            "retweet_count": 1, 
+            "favorite_count": 1, 
+            "reply_count": 1,
+            "created_at": 1,
+            "is_quote_status": 1
+        }
 
-    def fetch_tweet_ids_by_hashtag(self, hashtag_query):
-        """
-        Fetch tweet IDs based on a hashtag from MySQL.
+        results = list(self.mongo_db.find(query, projection))
+        if not results:
+            print("No tweets found.")
+            return pd.DataFrame()
 
-        :param hashtag_query: String, the hashtag to search for.
-        :return: List of tweet IDs or an empty list if none found.
-        """
+        # Post-process results to add custom fields based on available data
+        for result in results:
+            # Determine if the tweet is a retweet
+            result['is_retweet_status'] = True if result.get('is_retweet_status', False) else False
+            result['is_quote_status'] = True if result.get('is_quote_status', False) else False
+            result['user_name'] = user_info.get(result['user'], 'Unknown')
+            df = pd.DataFrame(results)
+            # Reorder and select columns as required
+            column_order = ['user_name', 'text', 'lang', 'is_retweet_status', 'is_quote_status',
+                            'reply_count', 'retweet_count', 'favorite_count', 'created_at']
+            df = df[column_order]
+
+            return df
+
+    # aggregates the searched tweet 
+    def create_aggregated_username(self, search_name, sort_metric="created_at", sort_order=1):  # 1 for ascending, -1 for descending
+        user_info = self.get_user_ids_by_username(search_name)
+        tweets = self.search_tweets_username(user_info)
+
+        data = [{
+            'Name': user_info[tweet['user']],
+            'User ID': tweet['user'],
+            'Tweet Text': tweet['text'],
+            'language':tweet['lang'],
+            'Retweet Count': tweet.get('retweet_count', 0),
+            'Favorite Count': tweet.get('favorite_count', 0),
+            'Reply Count': tweet.get('reply_count', 0),
+            'Timestamp': tweet.get('created_at', ''),
+            'Quoted Status' :tweet.get('is_quoted_status',False),
+            'Retweet Status':tweet.get('is_retweet_status',False)
+        } for tweet in tweets if tweet['user'] in user_info]
+
+        df = pd.DataFrame(data)
+        # Calculate total engagement as the sum of retweets, favorites, and replies
+        df['Total Engagement'] = df['Retweet Count'] + df['Favorite Count'] + df['Reply Count']
+        sort_column = {'timestamp': 'Timestamp', 'retweet': 'Retweet Count', 'favorite': 'Favorite Count', 'engagement': 'Total Engagement'}[sort_metric]
+        return df.sort_values(by=[sort_column], ascending=(sort_order == 1))
+    
+    
+    # search and sort users based on followers count or last posted timestamp
+    def search_and_sort_users(self, search_term, sort_by='followers_count', order='desc'):
         if not self.mysql_connection:
             print("MySQL connection is not established.")
-            return []
+            return pd.DataFrame()  # Return an empty DataFrame if no connection
+        
+        order_by = "DESC" if order == 'desc' else "ASC"
+        query = f"""
+        SELECT id_str as `User ID`, 
+               name as `Name`, 
+               followers_count as `Followers Count`, 
+               last_post_timestamp as `Last Post Timestamp`
+        FROM users 
+        WHERE name LIKE CONCAT('%', %s, '%') 
+        ORDER BY {sort_by} {order_by};
+        """
+        cursor = self.mysql_connection.cursor()
         try:
-            query = "SELECT tweet_id FROM hashtags WHERE hashtag = %s;"
-            cursor = self.mysql_connection.cursor()
-            cursor.execute(query, (hashtag_query,))
-            results = cursor.fetchall()
-            cursor.close()
-            return [result[0] for result in results] if results else []
-        except Error as e:
-            print(f"Error fetching tweet IDs: {e}")
-            return []
-
-    def fetch_tweets_by_tweet_ids(self, tweet_ids):
-        """
-        Fetch tweets from MongoDB using tweet IDs.
-
-        :param tweet_ids: List of tweet IDs to fetch.
-        :return: List of tweets or empty list if none found.
-        """
-        if not self.mongo_db:
-            print("MongoDB connection is not established.")
-            return []
-        query = {"id_str": {"$in": tweet_ids}}
-        tweets = list(self.mongo_db.tweet_data.find(query))
-        return tweets
-
-    def search_tweets_by_hashtag(self, hashtag_query):
-        """
-        Main function to search tweets by hashtag.
-
-        :param hashtag_query: String, the hashtag to search for.
-        :return: List of tweets found for the hashtag.
-        """
-        tweet_ids = self.fetch_tweet_ids_by_hashtag(hashtag_query)
-        if not tweet_ids:
-            print("No tweets found for hashtag:", hashtag_query)
-            return []
-        return self.fetch_tweets_by_tweet_ids(tweet_ids)
-
-    
-    
-    # this function fetches the results of the above functions and displays them ,a variable search_type has been added to handle code redundancy 
-    
-    def fetch_and_display_tweets(self, search_term, search_type='hashtag'):
-        """
-        Fetch tweet IDs from MySQL and corresponding tweet data from MongoDB based on a search term,
-        which can be a hashtag or a user name, and display the results.
-
-        :param search_term: String, the hashtag or user name to search for.
-        :param search_type: String, type of search ('hashtag' or 'username').
-        """
-        if search_type == 'hashtag':
-            tweet_ids = self.fetch_tweet_ids_by_hashtag(search_term)
-            if not tweet_ids:
-                print(f"No tweets found for hashtag: {search_term}")
-                return
-        elif search_type == 'username':
-            user_ids = self.get_user_ids_by_name(search_term)
-            if not user_ids:
-                print(f"No users found for the name: {search_term}")
-                return
-            tweet_ids = user_ids  # Assume mapping user_id to tweet_id
+            cursor.execute(query, (search_term,))
+            rows = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description]
+            df = pd.DataFrame(rows, columns=columns)
+            return df
+        except mysql.connector.Error as e:
+            print(f"Error fetching user data: {e}")
+            return pd.DataFrame()
+        finally:
+            cursor.close()   
+            
+              
+     # Function to get the time range 
+    def get_time_limit(self, time_frame):
+        """ Calculate the starting date and time for a given time frame with timezone-aware datetime objects. """
+        utc = pytz.utc
+        now = datetime.now(utc)  # Get the current time in UTC
+        if time_frame == '1day':
+            return now - timedelta(days=1)
+        elif time_frame == '1week':
+            return now - timedelta(weeks=1)
+        elif time_frame == '1month':
+            return now - timedelta(days=30)
         else:
-            print(f"Invalid search type specified: {search_type}")
-            return
-        tweets = self.fetch_tweets_by_tweet_ids(tweet_ids)
-        if tweets:
-            print(f"Tweets for {search_type} '{search_term}':")
-            for tweet in tweets:
-                print(tweet)
-        else:
-            print(f"No tweets found for {search_type} '{search_term}'.")
+            return None    
+        

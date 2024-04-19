@@ -1,6 +1,5 @@
 import logging.config
 import time
-
 import certifi
 import mysql.connector
 from pymongo import MongoClient
