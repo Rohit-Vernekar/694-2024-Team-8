@@ -40,3 +40,6 @@ print("Testing for engagement tweets")
 # Search for popular tweets based on engagement within the last month
 df_popular_tweets = twitter_queries.search_popular_tweets_based_on_engagement('1month')
 print(df_popular_tweets)
+
+print("testing for search by keywords and sorting by timerange parameter")
+print(twitter_queries.search_tweets_by_keyword("death", '1week'))

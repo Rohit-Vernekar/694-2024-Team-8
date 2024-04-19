@@ -266,4 +266,25 @@ class TwitterQueries:
             print(f"Error fetching tweets based on engagement: {e}")
             return pd.DataFrame()   
         
-        
+    def search_tweets_by_keyword(self, keyword, time_frame=None):
+        if self.mongo_db is None:
+            print("MongoDB connection is not established.")
+            return pd.DataFrame()
+        time_limit = self.get_time_limit(time_frame) if time_frame else None
+
+        query = {'$text': {'$search': keyword}}
+        if time_limit:
+            query['created_at'] = {'$gte': time_limit.isoformat()}  
+        projection = {
+            "text": 1, "user": 1,"created_at":1
+        }
+
+        # Execute the query
+        results = list(self.mongo_db.find(query, projection))
+        if not results:
+            print(f"No tweets found containing the keyword '{keyword}' within the specified time frame.")
+            return pd.DataFrame()
+
+        # Create a DataFrame from the results
+        df = pd.DataFrame(results)
+        return df
