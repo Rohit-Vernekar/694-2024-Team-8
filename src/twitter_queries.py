@@ -5,7 +5,8 @@ from mysql.connector import Error
 import pandas as pd
 from datetime import datetime, timedelta
 import pytz
-from .connections import get_mysql_conn, get_mongodb_conn
+from .connections import get_mysql_conn, get_mongodb_conn, get_neo4j_conn
+import neo4j
 
 class TwitterQueries:
     def __init__(self):
@@ -17,6 +18,7 @@ class TwitterQueries:
         except Exception as e:
             print("Failed to connect to MongoDB:", e)
             self.mongo_db = None
+        self.neo4j_connection = get_neo4j_conn()
 
     def ensure_text_index(self):
         if self.mongo_db is not None:
@@ -288,3 +290,44 @@ class TwitterQueries:
         # Create a DataFrame from the results
         df = pd.DataFrame(results)
         return df
+
+    def get_relevant_users_by_user_id(self, user_id, limit=10, include_tweet=False):
+        # Handle Neo4J connection issues
+        if not self.neo4j_connection:
+            print("Neo4J connection is not established.")
+            return []
+        try:
+            text = ''
+            if include_tweet:
+                text = ', b.tweet_list as tweet_list'
+            query = f"""MATCH (a)-[]->(n:user { " { id_str: '" + user_id + "'}" } ) 
+                    WITH a MATCH (a)-[r]->(b) WHERE b.screen_name <> "{user_id}"
+                    RETURN b.screen_name as screen_name, b.id_str as id_str, SUM(SIZE(b.tweet_list)) as n_of_tweets, 
+                    SUM(r.count) as n_of_interactions, MAX(r.last_interaction) as last_interaction_dt {text}
+                    ORDER BY n_of_tweets DESC, n_of_interactions DESC, last_interaction_dt DESC
+                    LIMIT {limit}
+                    """
+            return self.neo4j_connection.execute_query(query,result_transformer_=neo4j.Result.to_df)
+        except Error as e:
+            print(f"Error fetching relevant users: {e}")
+            return []
+        
+    def get_relevant_tweets_by_user_id(self, user_id, limit=10):
+        # Handle Neo4J connection issues
+        if not self.neo4j_connection:
+            print("Neo4J connection is not established.")
+            return []
+        try:
+            df_tweet = self.get_relevant_users_by_user_id(user_id,include_tweet=True)
+            if df_tweet.shape[0] == 0:
+                print('No relevant tweets found.')
+                return []
+            else:
+                tweet_list = df_tweet['tweet_list'].sum()[0:limit]
+                res = self.fetch_tweets_from_mongodb(tweet_list)
+                if len(res) == 0:
+                    print('No relevant tweets found.')
+                return res
+        except Error as e:
+            print(f"Error fetching relevant tweets: {e}")
+            return []
