@@ -10,6 +10,7 @@ import pytz
 from src.cache import Cache
 from src.config import cache_config
 from src.connections import get_mysql_conn, get_mongodb_conn, get_neo4j_conn
+from src.trending_hashtags import TrendingHashtags
 
 logging.config.fileConfig('logging.conf')
 logger = logging.getLogger(__name__)
@@ -278,3 +279,8 @@ class TwitterQueries:
             if len(res) == 0:
                 logger.info('No relevant tweets found.')
             return res
+
+    @staticmethod
+    def get_trending_hashtags():
+        hashtags = TrendingHashtags()
+        return hashtags.get_top_hashtags()

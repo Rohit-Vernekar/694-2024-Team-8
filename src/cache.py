@@ -72,3 +72,8 @@ class Cache:
             oldest_key = next(iter(self._data))
             del self._data[oldest_key]
         self._data[key] = (time.time(), value)
+
+    def __del__(self):
+        self.scheduler.shutdown()
+        logger.info("Scheduler shut down successfully.")
+        self.save_to_disk()

@@ -32,8 +32,9 @@ class TrendingHashtags:
             hashtags: List of hashtags found in tweet
         Returns: None
         """
-        for hashtag in hashtags:
-            hashtag_count = self.hashtag_freq[hashtag.lower()] = self.hashtag_freq[hashtag.lower()] + 1
+        for h in hashtags:
+            hashtag = h.lower()
+            hashtag_count = self.hashtag_freq[hashtag] = self.hashtag_freq[hashtag] + 1
 
             if hashtag in self.pq:
                 self.pq.update(hashtag, hashtag_count)
@@ -86,3 +87,8 @@ class TrendingHashtags:
                 return True
         logger.info(f"Trending hashtags data not found at {self.file_path}")
         return False
+
+    def __del__(self):
+        self.scheduler.shutdown()
+        logger.info("Scheduler shut down successfully.")
+        self.save_trending_hashtags()

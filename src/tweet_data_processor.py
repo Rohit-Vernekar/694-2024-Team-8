@@ -48,16 +48,14 @@ class TweetDataProcessor:
     def parse_datetime(timestamp_str):
         return datetime.strftime(datetime.strptime(timestamp_str, '%a %b %d %H:%M:%S %z %Y'), '%Y-%m-%d %H:%M:%S')
 
-    def process_hashtag(self, hashtags: list, tweet_id: str, user_id: str):
+    def process_hashtag(self, hashtags: list, tweet_id: str, user_id: str) -> None:
         """
         Function to save hashtags in MySQL db
         Args:
             hashtags: List of hashtags to be saved
             tweet_id: Tweet in which the hashtag was mentioned
             user_id: User who used the hashtag
-
-        Returns:
-
+        Returns: None
         """
         h_list = []
         for hashtag in hashtags:
@@ -82,9 +80,6 @@ class TweetDataProcessor:
         for key in keys_to_be_dropped:
             tweet_data.pop(key, None)
         tweet_data["user"] = tweet_data["user"]["id_str"]
-        hashtags = tweet_data.get("entities", {}).get("hashtags")
-        if hashtags:
-            self.process_hashtag(hashtags=hashtags, tweet_id=tweet_data["id_str"], user_id=tweet_data["user"])
 
         # Check if tweet with same ID exists
         existing_tweet = self.tweet_collection.find_one({"id_str": tweet_id})
@@ -100,6 +95,9 @@ class TweetDataProcessor:
                 logger.info(f"Skipping tweet with ID {tweet_id} as existing tweet is newer")
         else:
             # Insert new tweet data
+            hashtags = tweet_data.get("entities", {}).get("hashtags")
+            if hashtags:
+                self.process_hashtag(hashtags=hashtags, tweet_id=tweet_data["id_str"], user_id=tweet_data["user"])
             self.tweet_collection.insert_one(tweet_data)
             logger.info(f"Inserted new tweet with ID: {tweet_id}")
 
