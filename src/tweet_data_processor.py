@@ -248,7 +248,7 @@ class TweetDataProcessor:
                     self.process_user_mysql(tweet_data=data, user_data=data['user'])
 
                     # Process User into MongoDB
-                    self.process_user_mongodb(user_data=data['user'])
+                    # self.process_user_mongodb(user_data=data['user'])
 
                     data["is_retweet_status"] = False
 
@@ -257,7 +257,7 @@ class TweetDataProcessor:
                         self.process_reply_user_mysql(data)
 
                         # Process User into MongoDB
-                        self.process_user_mongodb(user_data={'id_str': data['in_reply_to_user_id_str']})
+                        # self.process_user_mongodb(user_data={'id_str': data['in_reply_to_user_id_str']})
 
                         # Add user ids to relationship lists
                         self.set_relationship_mongodb(id_A=data['user']['id_str'],
@@ -283,7 +283,7 @@ class TweetDataProcessor:
                                                     user_data=data['retweeted_status']['user'])
 
                             # Process User into MongoDB
-                            self.process_user_mongodb(user_data=data['retweeted_status']['user'])
+                            # self.process_user_mongodb(user_data=data['retweeted_status']['user'])
 
                             # Add user ids to relationship lists
                             self.set_relationship_mongodb(id_A=data['user']['id_str'],
@@ -316,7 +316,7 @@ class TweetDataProcessor:
                                                     user_data=data['quoted_status']['user'])
 
                             # Process User into MongoDB
-                            self.process_user_mongodb(user_data=data['quoted_status']['user'])
+                            # self.process_user_mongodb(user_data=data['quoted_status']['user'])
 
                             # Add user ids to relationship lists
                             self.set_relationship_mongodb(id_A=data['user']['id_str'],
