@@ -5,8 +5,8 @@ from collections import defaultdict
 from copy import deepcopy
 from typing import List, Tuple
 
-from indexed_priority_queue import IndexedPriorityQueue
 from apscheduler.schedulers.background import BackgroundScheduler
+from indexed_priority_queue import IndexedPriorityQueue
 
 from src.config import hashtag_config
 

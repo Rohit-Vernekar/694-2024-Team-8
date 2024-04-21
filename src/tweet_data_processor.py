@@ -218,11 +218,11 @@ class TweetDataProcessor:
         Returns: None
         """
 
-        query = f"""MERGE (a:user { " { id_str: '" + user_A['id_str'] + "'}" } )
+        query = f"""MERGE (a:user {" { id_str: '" + user_A['id_str'] + "'}"} )
                     ON CREATE SET a.screen_name = '{user_A['screen_name']}', a.tweet_list = ['{tweet_A}']
                     ON MATCH SET a += {'{'} tweet_list : CASE WHEN '{tweet_A}' IN a.tweet_list THEN a.tweet_list ELSE a.tweet_list + '{tweet_A}' END  {'}'}
                     WITH a
-                    MERGE (b:user { " { id_str: '" + user_B['id_str'] + "'}" } )
+                    MERGE (b:user {" { id_str: '" + user_B['id_str'] + "'}"} )
                     ON CREATE SET b.screen_name = '{user_B['screen_name']}', b.tweet_list = ['{tweet_B}']
                     ON MATCH SET b += {'{'} tweet_list : CASE WHEN '{tweet_B}' IN b.tweet_list THEN b.tweet_list ELSE b.tweet_list + '{tweet_B}' END {'}'}
                     WITH a,b
@@ -268,14 +268,14 @@ class TweetDataProcessor:
                                                       field_B='replied_by_users')
 
                         # Add Relationship into Neo4J
-                        self.set_relationship_neo4j(user_A = data['user'],
-                                                    user_B = {'id_str': data['in_reply_to_user_id_str'], 
-                                                              'name': data['in_reply_to_screen_name'],
-                                                              'screen_name': data['in_reply_to_screen_name']},
-                                                    relationship = 'replied_to',
-                                                    time = self.parse_datetime(data['created_at']),
-                                                    tweet_A = data['id_str'],
-                                                    tweet_B = data['in_reply_to_status_id_str'])
+                        self.set_relationship_neo4j(user_A=data['user'],
+                                                    user_B={'id_str': data['in_reply_to_user_id_str'],
+                                                            'name': data['in_reply_to_screen_name'],
+                                                            'screen_name': data['in_reply_to_screen_name']},
+                                                    relationship='replied_to',
+                                                    time=self.parse_datetime(data['created_at']),
+                                                    tweet_A=data['id_str'],
+                                                    tweet_B=data['in_reply_to_status_id_str'])
 
                     if 'retweeted_status' in data:
 
@@ -294,12 +294,12 @@ class TweetDataProcessor:
                                                           field_B='retweeted_by_users')
 
                             # Add Relationship into Neo4J                        
-                            self.set_relationship_neo4j(user_A = data['user'],
-                                                        user_B = data['retweeted_status']['user'],
-                                                        relationship = 'retweeted',
-                                                        time = self.parse_datetime(data['created_at']),
-                                                        tweet_A = data['id_str'],
-                                                        tweet_B = data['retweeted_status']['id_str'])
+                            self.set_relationship_neo4j(user_A=data['user'],
+                                                        user_B=data['retweeted_status']['user'],
+                                                        relationship='retweeted',
+                                                        time=self.parse_datetime(data['created_at']),
+                                                        tweet_A=data['id_str'],
+                                                        tweet_B=data['retweeted_status']['id_str'])
 
                             # Process Tweet
                             self.process_tweet(tweet_data=data["retweeted_status"])
@@ -327,12 +327,12 @@ class TweetDataProcessor:
                                                           field_B='quoted_by_users')
 
                             # Add Relationship into Neo4J
-                            self.set_relationship_neo4j(user_A = data['user'],
-                                                        user_B = data['quoted_status']['user'],
-                                                        relationship = 'quoted',
-                                                        time = self.parse_datetime(data['created_at']),
-                                                        tweet_A = data['id_str'],
-                                                        tweet_B = data['quoted_status']['id_str'])
+                            self.set_relationship_neo4j(user_A=data['user'],
+                                                        user_B=data['quoted_status']['user'],
+                                                        relationship='quoted',
+                                                        time=self.parse_datetime(data['created_at']),
+                                                        tweet_A=data['id_str'],
+                                                        tweet_B=data['quoted_status']['id_str'])
 
                             # Process Tweet
                             self.process_tweet(tweet_data=data["quoted_status"])
@@ -342,4 +342,3 @@ class TweetDataProcessor:
                             logger.exception(f"Error processing quoted tweet")
 
                     self.process_tweet(tweet_data=data)
-
