@@ -31,4 +31,4 @@ twitter_queries = TwitterQueries()
 # print("testing for search by keywords and sorting by timerange parameter")
 # print(twitter_queries.search_tweets_by_keyword("death", '1week'))
 #
-print((twitter_queries.get_trending_hashtags()))
+# print(twitter_queries.get_trending_hashtags())
