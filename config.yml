@@ -1,7 +1,9 @@
 cache:
   save_to_disk_interval: 60 # 60 seconds
-  ttl: 60 # 60 seconds
+  ttl: 600 # 60 seconds
   max_size: 1000 # 1000 key-value pairs
+  tweet_path: data/tweet_cache.pkl
+  user_path: data/user_cache.pkl
 mysql:
   host: databaseteam8.c1coikyuqtk8.us-east-1.rds.amazonaws.com
   user: admin

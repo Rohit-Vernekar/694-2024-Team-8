@@ -1,11 +1,10 @@
 import logging.config
 import time
+
 import certifi
 import mysql.connector
-from pymongo import MongoClient
-
-import neo4j
 from neo4j import GraphDatabase
+from pymongo import MongoClient
 
 from src.config import mysql_config, mongodb_config, neo4j_config
 
@@ -53,10 +52,10 @@ def get_mongodb_conn(collection: str, attempts=3, delay=2):
 def get_neo4j_conn(attempts=3, delay=2):
     logger.info("Trying to get Neo4j connection")
     attempt = 1
-    
+
     while attempt < attempts + 1:
         try:
-            driver = GraphDatabase.driver(neo4j_config["host"], auth= (neo4j_config["user"],neo4j_config["password"]))
+            driver = GraphDatabase.driver(neo4j_config["host"], auth=(neo4j_config["user"], neo4j_config["password"]))
             driver.verify_connectivity()
             return driver
         except Exception as err:

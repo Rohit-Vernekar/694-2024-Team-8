@@ -3,6 +3,7 @@ import logging.config
 from datetime import datetime
 
 from src.connections import get_mongodb_conn, get_mysql_conn, get_neo4j_conn
+from src.trending_hashtags import TrendingHashtags
 
 logging.config.fileConfig('logging.conf')
 logger = logging.getLogger(__name__)
@@ -10,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class TweetDataProcessor:
     def __init__(self):
+        self.trending_hashtags = TrendingHashtags()
         self.mysql_conn = get_mysql_conn()
         self.create_user_tb_mysql()
         self.tweet_collection = get_mongodb_conn(collection="tweet_data")
@@ -39,30 +41,31 @@ class TweetDataProcessor:
         try:
             self.mysql_conn.cursor().execute(sql_setup)
             self.mysql_conn.commit()
-        except Exception as e:
-            print(f"The error '{e}' occurred while creating table userdata in MySQL DB.")
+        except Exception:
+            logger.exception(f"Error occurred while creating table userdata in MySQL DB.")
 
     @staticmethod
     def parse_datetime(timestamp_str):
         return datetime.strftime(datetime.strptime(timestamp_str, '%a %b %d %H:%M:%S %z %Y'), '%Y-%m-%d %H:%M:%S')
 
-    def process_hashtag(self, hashtags: list, tweet_id: str, user_id: str):
+    def process_hashtag(self, hashtags: list, tweet_id: str, user_id: str) -> None:
         """
         Function to save hashtags in MySQL db
         Args:
             hashtags: List of hashtags to be saved
             tweet_id: Tweet in which the hashtag was mentioned
             user_id: User who used the hashtag
-
-        Returns:
-
+        Returns: None
         """
+        h_list = []
         for hashtag in hashtags:
             logger.info(f"Saving hashtag: {hashtag['text']}")
             self.mysql_conn.cursor().execute(f"""
             INSERT INTO hashtags (hashtag, user_id, tweet_id) VALUES ('{hashtag["text"]}', '{user_id}', '{tweet_id}')
             """)
+            h_list.append(hashtag["text"])
         self.mysql_conn.commit()
+        self.trending_hashtags.update_hashtags(hashtags=h_list)
 
     def process_tweet(self, tweet_data: dict) -> None:
         """
@@ -77,9 +80,6 @@ class TweetDataProcessor:
         for key in keys_to_be_dropped:
             tweet_data.pop(key, None)
         tweet_data["user"] = tweet_data["user"]["id_str"]
-        hashtags = tweet_data.get("entities", {}).get("hashtags")
-        if hashtags:
-            self.process_hashtag(hashtags=hashtags, tweet_id=tweet_data["id_str"], user_id=tweet_data["user"])
 
         # Check if tweet with same ID exists
         existing_tweet = self.tweet_collection.find_one({"id_str": tweet_id})
@@ -95,6 +95,9 @@ class TweetDataProcessor:
                 logger.info(f"Skipping tweet with ID {tweet_id} as existing tweet is newer")
         else:
             # Insert new tweet data
+            hashtags = tweet_data.get("entities", {}).get("hashtags")
+            if hashtags:
+                self.process_hashtag(hashtags=hashtags, tweet_id=tweet_data["id_str"], user_id=tweet_data["user"])
             self.tweet_collection.insert_one(tweet_data)
             logger.info(f"Inserted new tweet with ID: {tweet_id}")
 
@@ -213,11 +216,11 @@ class TweetDataProcessor:
         Returns: None
         """
 
-        query = f"""MERGE (a:user { " { id_str: '" + user_A['id_str'] + "'}" } )
+        query = f"""MERGE (a:user {" { id_str: '" + user_A['id_str'] + "'}"} )
                     ON CREATE SET a.screen_name = '{user_A['screen_name']}', a.tweet_list = ['{tweet_A}']
                     ON MATCH SET a += {'{'} tweet_list : CASE WHEN '{tweet_A}' IN a.tweet_list THEN a.tweet_list ELSE a.tweet_list + '{tweet_A}' END  {'}'}
                     WITH a
-                    MERGE (b:user { " { id_str: '" + user_B['id_str'] + "'}" } )
+                    MERGE (b:user {" { id_str: '" + user_B['id_str'] + "'}"} )
                     ON CREATE SET b.screen_name = '{user_B['screen_name']}', b.tweet_list = ['{tweet_B}']
                     ON MATCH SET b += {'{'} tweet_list : CASE WHEN '{tweet_B}' IN b.tweet_list THEN b.tweet_list ELSE b.tweet_list + '{tweet_B}' END {'}'}
                     WITH a,b
@@ -226,7 +229,7 @@ class TweetDataProcessor:
                     ON MATCH SET r.count = r.count + 1, 
                     r.last_interaction = CASE r.last_interaction WHEN > '{time}' THEN r.last_interaction ELSE '{time}' END
         """
-        self.neo4j_connection.execute_query(query)  
+        self.neo4j_connection.execute_query(query)
 
     def process_data(self, file_path: str) -> None:
         """
@@ -263,15 +266,15 @@ class TweetDataProcessor:
                                                       field_B='replied_by_users')
 
                         # Add Relationship into Neo4J
-                        self.set_relationship_neo4j(user_A = data['user'],
-                                                    user_B = {'id_str': data['in_reply_to_user_id_str'], 
-                                                              'name': data['in_reply_to_screen_name'],
-                                                              'screen_name': data['in_reply_to_screen_name']},
-                                                    relationship = 'replied_to',
-                                                    time = self.parse_datetime(data['created_at']),
-                                                    tweet_A = data['id_str'],
-                                                    tweet_B = data['in_reply_to_status_id_str'])
-                        
+                        self.set_relationship_neo4j(user_A=data['user'],
+                                                    user_B={'id_str': data['in_reply_to_user_id_str'],
+                                                            'name': data['in_reply_to_screen_name'],
+                                                            'screen_name': data['in_reply_to_screen_name']},
+                                                    relationship='replied_to',
+                                                    time=self.parse_datetime(data['created_at']),
+                                                    tweet_A=data['id_str'],
+                                                    tweet_B=data['in_reply_to_status_id_str'])
+
                     if 'retweeted_status' in data:
 
                         try:
@@ -289,12 +292,12 @@ class TweetDataProcessor:
                                                           field_B='retweeted_by_users')
 
                             # Add Relationship into Neo4J                        
-                            self.set_relationship_neo4j(user_A = data['user'],
-                                                        user_B = data['retweeted_status']['user'],
-                                                        relationship = 'retweeted',
-                                                        time = self.parse_datetime(data['created_at']),
-                                                        tweet_A = data['id_str'],
-                                                        tweet_B = data['retweeted_status']['id_str'])        
+                            self.set_relationship_neo4j(user_A=data['user'],
+                                                        user_B=data['retweeted_status']['user'],
+                                                        relationship='retweeted',
+                                                        time=self.parse_datetime(data['created_at']),
+                                                        tweet_A=data['id_str'],
+                                                        tweet_B=data['retweeted_status']['id_str'])
 
                             # Process Tweet
                             self.process_tweet(tweet_data=data["retweeted_status"])
@@ -302,8 +305,8 @@ class TweetDataProcessor:
                             data["retweeted_status_id_str"] = data["retweeted_status"]["id_str"]
                             data.pop("retweeted_status")
 
-                        except Exception as e:
-                            print(f"Error processing retweet: {e}")
+                        except Exception:
+                            logger.exception(f"Error processing retweet")
 
                     if 'quoted_status' in data:
 
@@ -322,19 +325,18 @@ class TweetDataProcessor:
                                                           field_B='quoted_by_users')
 
                             # Add Relationship into Neo4J
-                            self.set_relationship_neo4j(user_A = data['user'],
-                                                        user_B = data['quoted_status']['user'],
-                                                        relationship = 'quoted',
-                                                        time = self.parse_datetime(data['created_at']),
-                                                        tweet_A = data['id_str'],
-                                                        tweet_B = data['quoted_status']['id_str'])  
+                            self.set_relationship_neo4j(user_A=data['user'],
+                                                        user_B=data['quoted_status']['user'],
+                                                        relationship='quoted',
+                                                        time=self.parse_datetime(data['created_at']),
+                                                        tweet_A=data['id_str'],
+                                                        tweet_B=data['quoted_status']['id_str'])
 
                             # Process Tweet
                             self.process_tweet(tweet_data=data["quoted_status"])
                             data.pop("quoted_status")
 
-                        except Exception as e:
-                            print(f"Error processing quoted tweet: {e}")
+                        except Exception:
+                            logger.exception(f"Error processing quoted tweet")
 
                     self.process_tweet(tweet_data=data)
-
