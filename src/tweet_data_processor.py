@@ -3,6 +3,7 @@ import logging.config
 from datetime import datetime
 
 from src.connections import get_mongodb_conn, get_mysql_conn, get_neo4j_conn
+from src.trending_hashtags import TrendingHashtags
 
 logging.config.fileConfig('logging.conf')
 logger = logging.getLogger(__name__)
@@ -10,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class TweetDataProcessor:
     def __init__(self):
+        self.trending_hashtags = TrendingHashtags()
         self.mysql_conn = get_mysql_conn()
         self.create_user_tb_mysql()
         self.tweet_collection = get_mongodb_conn(collection="tweet_data")
@@ -39,8 +41,8 @@ class TweetDataProcessor:
         try:
             self.mysql_conn.cursor().execute(sql_setup)
             self.mysql_conn.commit()
-        except Exception as e:
-            print(f"The error '{e}' occurred while creating table userdata in MySQL DB.")
+        except Exception:
+            logger.exception(f"Error occurred while creating table userdata in MySQL DB.")
 
     @staticmethod
     def parse_datetime(timestamp_str):
@@ -57,12 +59,15 @@ class TweetDataProcessor:
         Returns:
 
         """
+        h_list = []
         for hashtag in hashtags:
             logger.info(f"Saving hashtag: {hashtag['text']}")
             self.mysql_conn.cursor().execute(f"""
             INSERT INTO hashtags (hashtag, user_id, tweet_id) VALUES ('{hashtag["text"]}', '{user_id}', '{tweet_id}')
             """)
+            h_list.append(hashtag["text"])
         self.mysql_conn.commit()
+        self.trending_hashtags.update_hashtags(hashtags=h_list)
 
     def process_tweet(self, tweet_data: dict) -> None:
         """
@@ -226,7 +231,7 @@ class TweetDataProcessor:
                     ON MATCH SET r.count = r.count + 1, 
                     r.last_interaction = CASE r.last_interaction WHEN > '{time}' THEN r.last_interaction ELSE '{time}' END
         """
-        self.neo4j_connection.execute_query(query)  
+        self.neo4j_connection.execute_query(query)
 
     def process_data(self, file_path: str) -> None:
         """
@@ -271,7 +276,7 @@ class TweetDataProcessor:
                                                     time = self.parse_datetime(data['created_at']),
                                                     tweet_A = data['id_str'],
                                                     tweet_B = data['in_reply_to_status_id_str'])
-                        
+
                     if 'retweeted_status' in data:
 
                         try:
@@ -294,7 +299,7 @@ class TweetDataProcessor:
                                                         relationship = 'retweeted',
                                                         time = self.parse_datetime(data['created_at']),
                                                         tweet_A = data['id_str'],
-                                                        tweet_B = data['retweeted_status']['id_str'])        
+                                                        tweet_B = data['retweeted_status']['id_str'])
 
                             # Process Tweet
                             self.process_tweet(tweet_data=data["retweeted_status"])
@@ -302,8 +307,8 @@ class TweetDataProcessor:
                             data["retweeted_status_id_str"] = data["retweeted_status"]["id_str"]
                             data.pop("retweeted_status")
 
-                        except Exception as e:
-                            print(f"Error processing retweet: {e}")
+                        except Exception:
+                            logger.exception(f"Error processing retweet")
 
                     if 'quoted_status' in data:
 
@@ -327,14 +332,14 @@ class TweetDataProcessor:
                                                         relationship = 'quoted',
                                                         time = self.parse_datetime(data['created_at']),
                                                         tweet_A = data['id_str'],
-                                                        tweet_B = data['quoted_status']['id_str'])  
+                                                        tweet_B = data['quoted_status']['id_str'])
 
                             # Process Tweet
                             self.process_tweet(tweet_data=data["quoted_status"])
                             data.pop("quoted_status")
 
-                        except Exception as e:
-                            print(f"Error processing quoted tweet: {e}")
+                        except Exception:
+                            logger.exception(f"Error processing quoted tweet")
 
                     self.process_tweet(tweet_data=data)
 
