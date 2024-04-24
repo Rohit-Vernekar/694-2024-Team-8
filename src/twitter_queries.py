@@ -263,13 +263,13 @@ class TwitterQueries:
                 WITH a MATCH (a)-[r]->(b) WHERE b.id_str <> "{user_id}"
                 RETURN b.screen_name as screen_name, b.id_str as id_str, SUM(SIZE(b.tweet_list)) as n_of_tweets, 
                 SUM(r.count) as n_of_interactions, MAX(r.last_interaction) as last_interaction_dt {text}
-                ORDER BY n_of_tweets DESC, n_of_interactions DESC, last_interaction_dt DESC
+                ORDER BY n_of_interactions DESC, last_interaction_dt DESC, n_of_tweets DESC
                 LIMIT {limit}
                 """
         df_user = self.neo4j_connection.execute_query(query, result_transformer_=neo4j.Result.to_df)
         if df_user.shape[0] == 0:
             logger.info('No relevant users found.')
-            return []
+            return pd.DataFrame()
         df_mysql = pd.DataFrame(self.get_user_data(df_user['id_str'].to_list()))
         df_user = df_user.merge(df_mysql.transpose().reset_index().drop(
             columns = ['index','screen_name']), on ='id_str')
