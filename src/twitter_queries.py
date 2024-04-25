@@ -52,18 +52,22 @@ class TwitterQueries:
         Returns: Dictionary with user_id as key and user data value
         """
         user_data = {}
-        with self.mysql_connection.cursor(dictionary=True) as cursor:
-            for user_id in user_ids:
-                cached_user_data = self.user_cache.get(user_id)
-                if cached_user_data:
-                    user_data[user_id] = cached_user_data
-                else:
-                    query = "SELECT * FROM users WHERE id_str = %s;"
-                    cursor.execute(query, (user_id,))
-                    user = cursor.fetchone()
-                    if user:
-                        self.user_cache.put(user_id, user)
-                        user_data[user_id] = user
+        cursor = None
+        for user_id in user_ids:
+            cached_user_data = self.user_cache.get(user_id)
+            if cached_user_data:
+                user_data[user_id] = cached_user_data
+            else:
+                if cursor is None:
+                    cursor = self.mysql_connection.cursor(dictionary=True)
+                query = "SELECT * FROM users WHERE id_str = %s;"
+                cursor.execute(query, (user_id,))
+                user = cursor.fetchone()
+                if user:
+                    self.user_cache.put(user_id, user)
+                    user_data[user_id] = user
+        if cursor:
+            cursor.close()
         return user_data
 
     # Search tweets by username
