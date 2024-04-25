@@ -279,8 +279,8 @@ class TwitterQueries:
             columns = ['index','screen_name']), on ='id_str')
         return df_user
 
-    def get_relevant_tweets_by_user_id(self, user_id, limit=10):
-        df_tweet = self.get_relevant_users_by_user_id(user_id, include_tweet=True)
+    def get_relevant_tweets_by_user_id(self, user_id, limit=10, user_limit=10):
+        df_tweet = self.get_relevant_users_by_user_id(user_id, limit=user_limit, include_tweet=True)
         if df_tweet.shape[0] == 0:
             logger.info('No relevant tweets found.')
             return []
