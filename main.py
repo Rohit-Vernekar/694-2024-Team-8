@@ -2,7 +2,7 @@ from src.tweet_data_processor import TweetDataProcessor
 from src.twitter_queries import TwitterQueries
 
 # obj = TweetDataProcessor()
-# obj.process_data(file_path="/Users/rohitvernekar/My Drive/Rutgers/DBMS/Project/corona-out-3")
+# obj.process_data(file_path="/Users/rohitvernekar/Desktop/corona-out-2")
 
 twitter_queries = TwitterQueries()
 
@@ -20,6 +20,8 @@ twitter_queries.search_tweets_by_keyword("death", '1week')
 twitter_queries.get_relevant_users_by_user_id("10228272")
 
 twitter_queries.get_relevant_tweets_by_user_id("10228272")
+
+twitter_queries.get_trending_hashtags()
 
 # import time
 # from src.twitter_queries import TwitterQueries
